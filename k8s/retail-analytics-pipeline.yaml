@@ -1,46 +1,4 @@
 apiVersion: tekton.dev/v1
-kind: Task
-metadata:
-  name: git-clone
-  labels:
-    app: retail-analytics
-spec:
-  params:
-    - name: url
-      type: string
-    - name: revision
-      default: main
-  workspaces:
-    - name: output
-  steps:
-    - name: clone
-      image: alpine/git:latest
-      script: |
-        #!/bin/sh
-        set -e
-        git clone --depth=1 --branch=$(params.revision) $(params.url) $(workspaces.output.path)
----
-apiVersion: tekton.dev/v1
-kind: Task
-metadata:
-  name: openshift-rollout
-  labels:
-    app: retail-analytics
-spec:
-  params:
-    - name: DEPLOYMENT_NAME
-      default: quarkus-retail-analytics-git
-  steps:
-    - name: trigger-rollout
-      image: image-registry.openshift-image-registry.svc:5000/openshift/cli:latest
-      script: |
-        #!/usr/bin/env bash
-        set -e
-        echo "Iniciando atualização controlada do deployment..."
-        oc rollout restart deployment/$(params.DEPLOYMENT_NAME)
-        oc rollout status deployment/$(params.DEPLOYMENT_NAME) --timeout=150s
----
-apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
   name: retail-analytics-pipeline
@@ -49,11 +7,11 @@ metadata:
 spec:
   params:
     - name: GIT_URL
-      default: https://github.com/cordeirops/retail-analytics
+      default: "https://github.com/cordeirops/retail-analytics.git"
     - name: GIT_REVISION
-      default: main
+      default: "main"
     - name: DEPLOYMENT_NAME
-      default: quarkus-retail-analytics-git
+      default: "quarkus-retail-analytics-git"
   workspaces:
     - name: source-code
   tasks:
@@ -78,3 +36,24 @@ spec:
       params:
         - name: DEPLOYMENT_NAME
           value: $(params.DEPLOYMENT_NAME)
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: openshift-rollout
+  labels:
+    app: retail-analytics
+spec:
+  params:
+    - name: DEPLOYMENT_NAME
+      default: quarkus-retail-analytics-git
+  steps:
+    - name: trigger-rollout
+      # Imagem pública oficial no Quay.io que resolve instantaneamente
+      image: quay.io/openshift/origin-cli:latest
+      script: |
+        #!/usr/bin/env bash
+        set -e
+        echo "Iniciando atualização controlada do deployment..."
+        oc rollout restart deployment/$(params.DEPLOYMENT_NAME)
+        oc rollout status deployment/$(params.DEPLOYMENT_NAME) --timeout=150s
