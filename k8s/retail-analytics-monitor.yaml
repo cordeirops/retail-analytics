@@ -1,0 +1,16 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: retail-analytics-monitor
+  namespace: pedro-sbarainicordei-dev
+  labels:
+    app: retail-analytics
+spec:
+  selector:
+    matchLabels:
+      # Deve bater exatamente com a label que o Quarkus gera no seu Service
+      app: retail-analytics
+  endpoints:
+  - port: http # Nome padrão da porta exposta pelo Quarkus OpenShift extension
+    path: /q/metrics
+    interval: 30s
