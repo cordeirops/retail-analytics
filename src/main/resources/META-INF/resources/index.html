@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Retail Analytics — Red Hat TAM Demo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #f5f5f5;
+      color: #333;
+    }
+
+    header {
+      background: #cc0000;
+      color: white;
+      padding: 18px 32px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    header svg { width: 36px; height: 36px; }
+
+    header h1 { font-size: 1.4rem; font-weight: 600; }
+    header span { font-size: 0.85rem; opacity: 0.85; margin-left: auto; }
+
+    .container { max-width: 960px; margin: 32px auto; padding: 0 24px; }
+
+    .status-bar {
+      background: white;
+      border-left: 4px solid #cc0000;
+      border-radius: 4px;
+      padding: 14px 20px;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+
+    .dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: #ccc;
+      flex-shrink: 0;
+    }
+    .dot.up { background: #3e8914; animation: pulse 2s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .status-bar p { font-size: 0.9rem; color: #555; }
+    .status-bar strong { color: #222; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 6px;
+      padding: 20px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+
+    .card .label { font-size: 0.78rem; color: #888; text-transform: uppercase; letter-spacing: 0.05em; }
+    .card .value { font-size: 2rem; font-weight: 700; color: #cc0000; margin: 6px 0 4px; }
+    .card .sub { font-size: 0.82rem; color: #666; }
+
+    .section { background: white; border-radius: 6px; padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 24px; }
+    .section h2 { font-size: 1rem; font-weight: 600; margin-bottom: 16px; color: #222; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th { text-align: left; padding: 8px 12px; background: #f9f9f9; color: #555; font-weight: 600; border-bottom: 2px solid #eee; }
+    td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #fafafa; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .badge.electronics { background: #e8f0fe; color: #1a56cc; }
+    .badge.furniture { background: #fef3e2; color: #b45309; }
+
+    .endpoints { display: flex; flex-direction: column; gap: 8px; }
+    .ep {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 12px;
+      border-radius: 4px;
+      background: #f9f9f9;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: background 0.15s;
+      text-decoration: none;
+      color: inherit;
+    }
+    .ep:hover { background: #f0f0f0; }
+    .method {
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 3px;
+      background: #3e8914;
+      color: white;
+      min-width: 36px;
+      text-align: center;
+    }
+    .ep-path { font-family: monospace; color: #333; }
+    .ep-desc { color: #888; margin-left: auto; font-size: 0.8rem; }
+
+    .health-row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .health-card {
+      flex: 1;
+      min-width: 180px;
+      border: 1px solid #eee;
+      border-radius: 6px;
+      padding: 14px 16px;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    .health-card:hover { border-color: #cc0000; }
+    .health-card .hc-title { font-size: 0.8rem; color: #888; margin-bottom: 6px; }
+    .health-card .hc-status { font-size: 0.95rem; font-weight: 600; color: #ccc; }
+    .health-card .hc-status.up { color: #3e8914; }
+    .health-card .hc-status.down { color: #cc0000; }
+
+    footer {
+      text-align: center;
+      padding: 24px;
+      font-size: 0.8rem;
+      color: #aaa;
+    }
+
+    .loading { color: #aaa; font-style: italic; }
+    .error { color: #cc0000; font-size: 0.82rem; }
+  </style>
+</head>
+<body>
+
+<header>
+  <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="32" cy="32" r="30" fill="white" opacity="0.15"/>
+    <path d="M18 44 L32 20 L46 44 Z" fill="white" opacity="0.9"/>
+    <circle cx="32" cy="38" r="5" fill="#cc0000"/>
+  </svg>
+  <div>
+    <h1>Retail Analytics</h1>
+    <div style="font-size:0.8rem;opacity:0.8">Red Hat TAM Demo — Quarkus on OpenShift</div>
+  </div>
+  <span id="timestamp">Loading...</span>
+</header>
+
+<div class="container">
+
+  <div class="status-bar">
+    <div class="dot" id="app-dot"></div>
+    <p><strong id="app-status">Checking application...</strong> &nbsp;|&nbsp; Framework: Quarkus 3.15.1 &nbsp;|&nbsp; Runtime: OpenShift Developer Sandbox</p>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="label">Total Products</div>
+      <div class="value" id="total-products">—</div>
+      <div class="sub">in catalog</div>
+    </div>
+    <div class="card">
+      <div class="label">Monthly Revenue</div>
+      <div class="value" id="total-revenue">—</div>
+      <div class="sub" id="top-category">top category loading...</div>
+    </div>
+    <div class="card">
+      <div class="label">Monthly Orders</div>
+      <div class="value" id="total-orders">—</div>
+      <div class="sub">this period</div>
+    </div>
+    <div class="card">
+      <div class="label">App Version</div>
+      <div class="value" style="font-size:1.4rem" id="app-version">—</div>
+      <div class="sub" id="app-name">loading...</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Product Catalog</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th><th>Name</th><th>Category</th><th>Price (R$)</th><th>Stock</th>
+        </tr>
+      </thead>
+      <tbody id="products-table">
+        <tr><td colspan="5" class="loading">Loading products...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Health Checks</h2>
+    <div class="health-row">
+      <div class="health-card" onclick="checkHealth('live')">
+        <div class="hc-title">Liveness <span style="font-size:0.72rem;color:#bbb">/q/health/live</span></div>
+        <div class="hc-status" id="hc-live">Checking...</div>
+      </div>
+      <div class="health-card" onclick="checkHealth('ready')">
+        <div class="hc-title">Readiness <span style="font-size:0.72rem;color:#bbb">/q/health/ready</span></div>
+        <div class="hc-status" id="hc-ready">Checking...</div>
+      </div>
+      <div class="health-card" onclick="checkHealth('started')">
+        <div class="hc-title">Started <span style="font-size:0.72rem;color:#bbb">/q/health/started</span></div>
+        <div class="hc-status" id="hc-started">Checking...</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>API Endpoints</h2>
+    <div class="endpoints">
+      <a class="ep" href="/api/v1/info" target="_blank">
+        <span class="method">GET</span>
+        <span class="ep-path">/api/v1/info</span>
+        <span class="ep-desc">Application info</span>
+      </a>
+      <a class="ep" href="/api/v1/products" target="_blank">
+        <span class="method">GET</span>
+        <span class="ep-path">/api/v1/products</span>
+        <span class="ep-desc">List all products</span>
+      </a>
+      <a class="ep" href="/api/v1/products?category=Electronics" target="_blank">
+        <span class="method">GET</span>
+        <span class="ep-path">/api/v1/products?category=Electronics</span>
+        <span class="ep-desc">Filter by category</span>
+      </a>
+      <a class="ep" href="/api/v1/analytics/summary" target="_blank">
+        <span class="method">GET</span>
+        <span class="ep-path">/api/v1/analytics/summary</span>
+        <span class="ep-desc">Monthly sales summary</span>
+      </a>
+      <a class="ep" href="/q/health" target="_blank">
+        <span class="method">GET</span>
+        <span class="ep-path">/q/health</span>
+        <span class="ep-desc">Full health report</span>
+      </a>
+      <a class="ep" href="/q/metrics" target="_blank">
+        <span class="method">GET</span>
+        <span class="ep-path">/q/metrics</span>
+        <span class="ep-desc">Prometheus metrics</span>
+      </a>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  Retail Analytics v1.0.0 &nbsp;·&nbsp; Quarkus 3.15.1 &nbsp;·&nbsp; Red Hat TAM Interview Demo &nbsp;·&nbsp;
+  Running on <strong>OpenShift Developer Sandbox</strong>
+</footer>
+
+<script>
+  document.getElementById('timestamp').textContent = new Date().toLocaleString();
+
+  async function fetchJSON(path) {
+    const r = await fetch(path);
+    if (!r.ok) throw new Error(r.status);
+    return r.json();
+  }
+
+  async function loadInfo() {
+    try {
+      const d = await fetchJSON('/api/v1/info');
+      document.getElementById('app-version').textContent = d.version;
+      document.getElementById('app-name').textContent = d.app + ' — ' + d.framework;
+      document.getElementById('app-dot').classList.add('up');
+      document.getElementById('app-status').textContent = 'Application is UP';
+    } catch(e) {
+      document.getElementById('app-status').textContent = 'Error reaching application';
+    }
+  }
+
+  async function loadProducts() {
+    try {
+      const products = await fetchJSON('/api/v1/products');
+      document.getElementById('total-products').textContent = products.length;
+      const tbody = document.getElementById('products-table');
+      tbody.innerHTML = products.map(p => `
+        <tr>
+          <td>${p.id}</td>
+          <td><strong>${p.name}</strong></td>
+          <td><span class="badge ${p.category.toLowerCase()}">${p.category}</span></td>
+          <td>R$ ${p.price.toFixed(2)}</td>
+          <td>${p.stockQuantity} units</td>
+        </tr>
+      `).join('');
+    } catch(e) {
+      document.getElementById('products-table').innerHTML = '<tr><td colspan="5" class="error">Failed to load products</td></tr>';
+    }
+  }
+
+  async function loadSummary() {
+    try {
+      const s = await fetchJSON('/api/v1/analytics/summary');
+      document.getElementById('total-revenue').textContent = 'R$ ' + (s.totalRevenue / 1000).toFixed(0) + 'k';
+      document.getElementById('total-orders').textContent = s.totalOrders;
+      document.getElementById('top-category').textContent = 'top: ' + s.topCategory;
+    } catch(e) {}
+  }
+
+  async function checkHealth(type) {
+    const el = document.getElementById('hc-' + type);
+    el.textContent = 'Checking...';
+    el.className = 'hc-status';
+    try {
+      const d = await fetchJSON('/q/health/' + type);
+      el.textContent = d.status;
+      el.className = 'hc-status ' + (d.status === 'UP' ? 'up' : 'down');
+    } catch(e) {
+      el.textContent = 'Error';
+      el.className = 'hc-status down';
+    }
+  }
+
+  loadInfo();
+  loadProducts();
+  loadSummary();
+  checkHealth('live');
+  checkHealth('ready');
+  checkHealth('started');
+</script>
+</body>
+</html>
