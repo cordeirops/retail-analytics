@@ -4,13 +4,14 @@ metadata:
   name: retail-analytics-monitor
   namespace: pedro-sbarainicordei-dev
   labels:
+    # Vincula o monitor ao aplicativo e à stack de observabilidade do cluster
     app: retail-analytics
+    release: prometheus
 spec:
   selector:
     matchLabels:
       app: retail-analytics
   endpoints:
-  - targetPort: 8080 # Alvo numérico direto para o container
+  - port: http # Alinha de volta com o nome textual da porta do seu Service
     path: /q/metrics
     interval: 30s
-    scheme: http
