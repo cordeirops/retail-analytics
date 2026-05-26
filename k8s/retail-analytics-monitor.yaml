@@ -8,9 +8,9 @@ metadata:
 spec:
   selector:
     matchLabels:
-      # Deve bater exatamente com a label que o Quarkus gera no seu Service
       app: retail-analytics
   endpoints:
-  - port: http # Nome padrão da porta exposta pelo Quarkus OpenShift extension
+  - targetPort: 8080 # Alvo numérico direto para o container
     path: /q/metrics
     interval: 30s
+    scheme: http
