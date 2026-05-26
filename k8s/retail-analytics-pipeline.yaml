@@ -11,7 +11,7 @@ spec:
     - name: GIT_REVISION
       default: "main"
     - name: DEPLOYMENT_NAME
-      default: "quarkus-retail-analytics-git"
+      default: "retail-analytics" # Alinhado com o seu 'oc get deployments'
   workspaces:
     - name: source-code
   tasks:
@@ -46,14 +46,13 @@ metadata:
 spec:
   params:
     - name: DEPLOYMENT_NAME
-      default: quarkus-retail-analytics-git
+      default: retail-analytics
   steps:
     - name: trigger-rollout
-      # Imagem pública oficial no Quay.io que resolve instantaneamente
       image: quay.io/openshift/origin-cli:latest
       script: |
         #!/usr/bin/env bash
         set -e
-        echo "Iniciando atualização controlada do deployment..."
+        echo "Iniciando atualização controlada do deployment: $(params.DEPLOYMENT_NAME)"
         oc rollout restart deployment/$(params.DEPLOYMENT_NAME)
         oc rollout status deployment/$(params.DEPLOYMENT_NAME) --timeout=150s

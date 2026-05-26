@@ -42,7 +42,7 @@ jobs:
         # Altera automaticamente para o seu namespace/projeto do Sandbox
         namespace: pedro-sbarainicordei-dev
 
-    # 6. Cria o PipelineRun apontando para o PVC real existente no Sandbox
+    # 6. Cria o PipelineRun usando isolamento emptyDir em memória para o Sandbox
     - name: Trigger OpenShift Tekton Pipeline
       run: |
         echo "Injetando o PipelineRun diretamente na API do Tekton..."
@@ -58,9 +58,8 @@ jobs:
             name: retail-analytics-pipeline
           workspaces:
             - name: source-code
-              persistentVolumeClaim:
-                # CORREÇÃO AQUI: Alinhando com o recurso real do cluster
-                claimName: retail-analytics-pvc-data
+              # Substituindo o PVC por emptyDir para rodar sem dependências de disco
+              emptyDir: {}
         EOF
         
         echo "Aguardando o registro do PipelineRun..."
