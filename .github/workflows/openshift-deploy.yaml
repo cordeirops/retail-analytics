@@ -42,7 +42,7 @@ jobs:
         # Altera automaticamente para o seu namespace/projeto do Sandbox
         namespace: pedro-sbarainicordei-dev
 
-    # 6. Cria o PipelineRun usando 'oc create' para suportar generateName com a API v1
+    # 6. Cria o PipelineRun apontando para o PVC real existente no Sandbox
     - name: Trigger OpenShift Tekton Pipeline
       run: |
         echo "Injetando o PipelineRun diretamente na API do Tekton..."
@@ -54,14 +54,13 @@ jobs:
           generateName: retail-analytics-run-
           namespace: pedro-sbarainicordei-dev
         spec:
-          # Aponta para o pipeline correto encontrado no cluster
           pipelineRef:
             name: retail-analytics-pipeline
           workspaces:
             - name: source-code
-              # Reutiliza o PVC existente no Sandbox
               persistentVolumeClaim:
-                claimName: retail-analytics-pvc
+                # CORREÇÃO AQUI: Alinhando com o recurso real do cluster
+                claimName: retail-analytics-pvc-data
         EOF
         
         echo "Aguardando o registro do PipelineRun..."
