@@ -42,13 +42,28 @@ jobs:
         # Altera automaticamente para o seu namespace/projeto do Sandbox
         namespace: pedro-sbarainicordei-dev
 
-    # 6. Dispara o Build automatizado no OpenShift (Tekton/S2I) puxando a alteração
-    - name: Trigger OpenShift Build & Rollout
+    # 6. Cria o PipelineRun usando a API v1 e reutilizando o PVC existente no Sandbox
+    - name: Trigger OpenShift Tekton Pipeline
       run: |
-        echo "Disparando a esteira interna do OpenShift..."
-        # Puxa o código novo e inicia a compilação oficial do container
-        oc start-build retail-analytics --follow
+        echo "Injetando o PipelineRun diretamente na API do Tekton..."
         
-        echo "Monitorando a estabilidade do Rollout..."
-        # Aguarda o novo Pod passar nos health checks e ficar pronto
-        oc rollout status deployment/retail-analytics --timeout=150s
+        oc apply -f - <<EOF
+        apiVersion: tekton.dev/v1
+        kind: PipelineRun
+        metadata:
+          generateName: retail-analytics-run-
+          namespace: pedro-sbarainicordei-dev
+        spec:
+          pipelineRef:
+            name: retail-analytics-pipeline
+          workspaces:
+            - name: source-code
+              persistentVolumeClaim:
+                claimName: retail-analytics-pvc
+        EOF
+        
+        echo "Aguardando o registro do PipelineRun..."
+        sleep 5
+        
+        echo "Última execução registrada no cluster:"
+        oc get pipelineruns.tekton.dev --sort-by='.metadata.creationTimestamp' | tail -n 1
