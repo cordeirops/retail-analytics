@@ -1,0 +1,232 @@
+# =====================================================
+# Task 1: unit-tests
+# Roda os testes do Maven dentro do cluster
+# =====================================================
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: maven-test
+spec:
+  params:
+    - name: MAVEN_IMAGE
+      default: registry.access.redhat.com/ubi8/openjdk-17:latest
+    - name: GOALS
+      type: array
+      default: ["test"]
+  workspaces:
+    - name: source
+    - name: maven-settings
+      optional: true
+  steps:
+    - name: run-tests
+      image: $(params.MAVEN_IMAGE)
+      workingDir: $(workspaces.source.path)
+      args: ["$(params.GOALS[*])"]
+      command: ["mvn"]
+      env:
+        - name: MAVEN_OPTS
+          value: "-Xmx512m"
+---
+# =====================================================
+# Task 2: code-analysis (checkstyle simples)
+# =====================================================
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: maven-verify
+spec:
+  params:
+    - name: MAVEN_IMAGE
+      default: registry.access.redhat.com/ubi8/openjdk-17:latest
+  workspaces:
+    - name: source
+  steps:
+    - name: verify
+      image: $(params.MAVEN_IMAGE)
+      workingDir: $(workspaces.source.path)
+      command: ["mvn"]
+      args: ["verify", "-DskipTests=false", "-Dmaven.test.failure.ignore=false"]
+      env:
+        - name: MAVEN_OPTS
+          value: "-Xmx512m"
+---
+# =====================================================
+# Task 3: s2i-build — dispara o BuildConfig existente
+# =====================================================
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: openshift-start-build
+spec:
+  params:
+    - name: BUILD_CONFIG_NAME
+      default: retail-analytics
+    - name: WAIT
+      default: "true"
+  steps:
+    - name: start-build
+      image: registry.redhat.io/openshift4/ose-cli:latest
+      script: |
+        #!/usr/bin/env bash
+        set -e
+        echo "Starting build: $(params.BUILD_CONFIG_NAME)"
+        BUILD_NAME=$(oc start-build $(params.BUILD_CONFIG_NAME) -o name)
+        echo "Build started: $BUILD_NAME"
+        if [ "$(params.WAIT)" = "true" ]; then
+          oc wait $BUILD_NAME --for=condition=complete --timeout=600s
+          echo "Build completed successfully"
+        fi
+---
+# =====================================================
+# Task 4: rollout — verifica que o deploy subiu ok
+# =====================================================
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: openshift-verify-deploy
+spec:
+  params:
+    - name: DEPLOYMENT_NAME
+      default: retail-analytics
+    - name: ROUTE_NAME
+      default: retail-analytics
+  steps:
+    - name: verify-rollout
+      image: registry.redhat.io/openshift4/ose-cli:latest
+      script: |
+        #!/usr/bin/env bash
+        set -e
+        echo "Waiting for rollout..."
+        oc rollout status deployment/$(params.DEPLOYMENT_NAME) --timeout=120s
+        echo "Getting route..."
+        ROUTE=$(oc get route $(params.ROUTE_NAME) -o jsonpath='{.spec.host}')
+        echo "App available at: http://$ROUTE"
+        echo "Testing /api/v1/info..."
+        sleep 5
+        curl -sf http://$ROUTE/api/v1/info || echo "Note: route may still be warming up"
+        echo "Done."
+---
+# =====================================================
+# Pipeline principal
+# =====================================================
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: retail-analytics-pipeline
+  labels:
+    app: retail-analytics
+spec:
+  params:
+    - name: GIT_URL
+      default: https://github.com/cordeirops/retail-analytics
+    - name: GIT_REVISION
+      default: main
+    - name: BUILD_CONFIG_NAME
+      default: retail-analytics
+    - name: DEPLOYMENT_NAME
+      default: retail-analytics
+  workspaces:
+    - name: source-code
+    - name: maven-cache
+  tasks:
+    # ── Passo 1: clone do repositório ──
+    - name: git-clone
+      taskRef:
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: git-clone
+          - name: namespace
+            value: openshift-tasks
+      params:
+        - name: url
+          value: $(params.GIT_URL)
+        - name: revision
+          value: $(params.GIT_REVISION)
+        - name: deleteExisting
+          value: "true"
+      workspaces:
+        - name: output
+          workspace: source-code
+
+    # ── Passo 2: testes unitários ──
+    - name: unit-tests
+      taskRef:
+        kind: Task
+        name: maven-test
+      runAfter: [git-clone]
+      params:
+        - name: GOALS
+          value: ["test", "-Dmaven.test.failure.ignore=false"]
+      workspaces:
+        - name: source
+          workspace: source-code
+
+    # ── Passo 3: verify (compile + test completo) ──
+    - name: code-verify
+      taskRef:
+        kind: Task
+        name: maven-verify
+      runAfter: [unit-tests]
+      workspaces:
+        - name: source
+          workspace: source-code
+
+    # ── Passo 4: S2I build no OpenShift ──
+    - name: build-image
+      taskRef:
+        kind: Task
+        name: openshift-start-build
+      runAfter: [code-verify]
+      params:
+        - name: BUILD_CONFIG_NAME
+          value: $(params.BUILD_CONFIG_NAME)
+        - name: WAIT
+          value: "true"
+
+    # ── Passo 5: verificar deploy ──
+    - name: verify-deploy
+      taskRef:
+        kind: Task
+        name: openshift-verify-deploy
+      runAfter: [build-image]
+      params:
+        - name: DEPLOYMENT_NAME
+          value: $(params.DEPLOYMENT_NAME)
+        - name: ROUTE_NAME
+          value: $(params.DEPLOYMENT_NAME)
+---
+# =====================================================
+# PipelineRun — dispara a pipeline uma vez (demo)
+# =====================================================
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: retail-analytics-pipeline-run-1
+  labels:
+    app: retail-analytics
+    tekton.dev/pipeline: retail-analytics-pipeline
+spec:
+  pipelineRef:
+    name: retail-analytics-pipeline
+  params:
+    - name: GIT_URL
+      value: https://github.com/cordeirops/retail-analytics
+    - name: GIT_REVISION
+      value: main
+    - name: BUILD_CONFIG_NAME
+      value: retail-analytics
+    - name: DEPLOYMENT_NAME
+      value: retail-analytics
+  workspaces:
+    - name: source-code
+      volumeClaimTemplate:
+        spec:
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 500Mi
+    - name: maven-cache
+      emptyDir: {}

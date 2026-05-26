@@ -1,0 +1,75 @@
+# =====================================================
+# ResourceQuota — limites do namespace
+# =====================================================
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: retail-analytics-quota
+spec:
+  hard:
+    requests.cpu: "500m"
+    requests.memory: "512Mi"
+    limits.cpu: "1"
+    limits.memory: "1Gi"
+    pods: "5"
+    persistentvolumeclaims: "2"
+---
+# =====================================================
+# LimitRange — defaults por container
+# =====================================================
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: retail-analytics-limits
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: "500m"
+        memory: "512Mi"
+      defaultRequest:
+        cpu: "100m"
+        memory: "256Mi"
+      max:
+        cpu: "1"
+        memory: "1Gi"
+      min:
+        cpu: "50m"
+        memory: "64Mi"
+---
+# =====================================================
+# NetworkPolicy — só permite tráfego interno
+# =====================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: retail-analytics-netpol
+spec:
+  podSelector:
+    matchLabels:
+      app: retail-analytics
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - {}
+---
+# =====================================================
+# PersistentVolumeClaim — storage para logs/dados
+# =====================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: retail-analytics-logs
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
