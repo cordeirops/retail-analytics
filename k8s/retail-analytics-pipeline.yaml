@@ -34,7 +34,7 @@ spec:
   steps:
     - name: run-tests
       image: $(params.MAVEN_IMAGE)
-      # CORREÇÃO AQUI: Executa na raiz exata onde o git-clone jogou os arquivos do repositório
+      # CORREÇÃO CRUCIAL AQUI: Executa na raiz exata onde o pom.xml foi clonado
       workingDir: $(workspaces.source.path)
       command: ["mvn"]
       args: ["test", "-Dmaven.test.failure.ignore=false"]
