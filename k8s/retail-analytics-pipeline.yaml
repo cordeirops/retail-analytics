@@ -34,7 +34,8 @@ spec:
   steps:
     - name: run-tests
       image: $(params.MAVEN_IMAGE)
-      workingDir: $(workspaces.source.path)
+      # AJUSTE AQUI: Aponta o diretório de execução para a subpasta correta do projeto
+      workingDir: $(workspaces.source.path)/retail-analytics
       command: ["mvn"]
       args: ["test", "-Dmaven.test.failure.ignore=false"]
       env:
