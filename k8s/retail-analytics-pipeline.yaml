@@ -1,17 +1,78 @@
 apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: git-clone
+spec:
+  params:
+    - name: url
+      type: string
+    - name: revision
+      default: main
+  workspaces:
+    - name: output
+  steps:
+    - name: clone
+      image: alpine/git:latest
+      script: |
+        rm -rf $(workspaces.output.path)/*
+        git clone --depth=1 ...
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: maven-test
+spec:
+  params:
+    - name: MAVEN_IMAGE
+      default: registry.access.redhat.com/ubi8/openjdk-17:latest
+  workspaces:
+    - name: source
+  steps:
+    - name: run-tests
+      image: $(params.MAVEN_IMAGE)
+      workingDir: $(workspaces.source.path)
+      command: ["mvn"]
+      args: ["test", "-Dmaven.test.failure.ignore=false"]
+      env:
+        - name: MAVEN_OPTS
+          value: "-Xmx512m -Xms256m"
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: openshift-start-build
+spec:
+  params:
+    - name: BUILD_CONFIG_NAME
+      default: retail-analytics
+  steps:
+    - name: start-build
+      image: image-registry.openshift-image-registry.svc:5000/openshift/cli:latest
+      script: |
+        oc start-build $(params.BUILD_CONFIG_NAME) --wait
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: verify-deploy
+spec:
+  params:
+    - name: DEPLOYMENT_NAME
+      default: retail-analytics
+    - name: ROUTE_NAME
+      default: retail-analytics
+  steps:
+    - name: verify
+      image: ...openshift/cli:latest
+      script: |
+        oc rollout status deployment/$(params.DEPLOYMENT_NAME) --timeout=120s
+        ROUTE=$(oc get route $(params.ROUTE_NAME) -o jsonpath='{.spec.host}')
+        curl -sf http://$ROUTE/q/health/live
+apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
   name: retail-analytics-pipeline
-  labels:
-    app: retail-analytics
 spec:
   params:
     - name: GIT_URL
-      default: "https://github.com/cordeirops/retail-analytics.git"
-    - name: GIT_REVISION
-      default: "main"
-    - name: DEPLOYMENT_NAME
-      default: "retail-analytics" # Alinhado com o seu 'oc get deployments'
+      default: https://github.com/cordeirops/retail-analytics
   workspaces:
     - name: source-code
   tasks:
@@ -19,40 +80,10 @@ spec:
       taskRef:
         kind: Task
         name: git-clone
-      params:
-        - name: url
-          value: $(params.GIT_URL)
-        - name: revision
-          value: $(params.GIT_REVISION)
-      workspaces:
-        - name: output
-          workspace: source-code
-
-    - name: deploy-and-verify
-      taskRef:
-        kind: Task
-        name: openshift-rollout
+    - name: unit-tests
+      taskRef: ...
       runAfter: [git-clone]
-      params:
-        - name: DEPLOYMENT_NAME
-          value: $(params.DEPLOYMENT_NAME)
----
-apiVersion: tekton.dev/v1
-kind: Task
-metadata:
-  name: openshift-rollout
-  labels:
-    app: retail-analytics
-spec:
-  params:
-    - name: DEPLOYMENT_NAME
-      default: retail-analytics
-  steps:
-    - name: trigger-rollout
-      image: quay.io/openshift/origin-cli:latest
-      script: |
-        #!/usr/bin/env bash
-        set -e
-        echo "Iniciando atualização controlada do deployment: $(params.DEPLOYMENT_NAME)"
-        oc rollout restart deployment/$(params.DEPLOYMENT_NAME)
-        oc rollout status deployment/$(params.DEPLOYMENT_NAME) --timeout=150s
+    - name: build-image
+      runAfter: [unit-tests]
+    - name: verify-deploy
+      runAfter: [build-image]
