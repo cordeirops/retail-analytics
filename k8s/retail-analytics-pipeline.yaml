@@ -1,13 +1,9 @@
 # =====================================================
-# Pipeline corrigida — retail-analytics
-# Fixes:
-# 1. Adicionado RoleBinding para a SA pipeline ter permissão de build
-# 2. maven-test com timeout e skip de testes pesados em CI
-# 3. verify-deploy com retry no curl
-# 4. Adicionado param GIT_REVISION para flexibilidade
+# Pipeline Tekton — retail-analytics
+# Namespace: pedro-sbarainicordei-dev
 # =====================================================
 
-# ── RoleBinding: permite que a SA 'pipeline' execute oc start-build ──
+# ── RoleBinding: SA 'pipeline' pode executar oc start-build ──
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
@@ -40,19 +36,17 @@ spec:
   steps:
     - name: clone
       image: alpine/git:latest
-      workingDir: $(workspaces.output.path)
       script: |
         #!/bin/sh
         set -e
-        echo "=== Limpando workspace ==="
-        rm -rf ..?* .[!.]* * 2>/dev/null || true
-        echo "=== Clonando $(params.url) branch $(params.revision) ==="
-        git clone --depth=1 --branch=$(params.revision) $(params.url) .
-        echo "=== Clone concluido ==="
-        ls -la
+        WORKSPACE=$(workspaces.output.path)
+        echo "=== Workspace: $WORKSPACE ==="
+        rm -rf $WORKSPACE/* $WORKSPACE/.[!.]* 2>/dev/null || true
+        git clone --depth=1 --branch=$(params.revision) $(params.url) $WORKSPACE
+        echo "=== Conteudo clonado: ==="
+        ls -la $WORKSPACE
 ---
 # ── Task 2: maven-test ──
-# FIX: adicionado timeout, skip de testes de integração pesados em CI
 apiVersion: tekton.dev/v1
 kind: Task
 metadata:
@@ -85,7 +79,6 @@ spec:
         - "-B"
 ---
 # ── Task 3: openshift-start-build ──
-# FIX: verifica se o BuildConfig existe antes de disparar
 apiVersion: tekton.dev/v1
 kind: Task
 metadata:
@@ -104,8 +97,8 @@ spec:
         set -e
         echo "=== Verificando BuildConfig $(params.BUILD_CONFIG_NAME) ==="
         oc get bc $(params.BUILD_CONFIG_NAME) || {
-          echo "ERRO: BuildConfig $(params.BUILD_CONFIG_NAME) nao encontrado."
-          echo "Execute primeiro: oc new-app java:openjdk-17-ubi8~https://github.com/cordeirops/retail-analytics --name=retail-analytics"
+          echo "ERRO: BuildConfig nao encontrado."
+          echo "Execute: oc new-app java:openjdk-17-ubi8~https://github.com/cordeirops/retail-analytics --name=retail-analytics"
           exit 1
         }
         echo "=== Iniciando build S2I ==="
@@ -113,7 +106,6 @@ spec:
         echo "=== Build concluido com sucesso ==="
 ---
 # ── Task 4: verify-deploy ──
-# FIX: retry no curl com sleep para aguardar warmup do Quarkus
 apiVersion: tekton.dev/v1
 kind: Task
 metadata:
@@ -159,7 +151,7 @@ spec:
         echo "Verifique os logs: oc logs deployment/$(params.DEPLOYMENT_NAME)"
         exit 1
 ---
-# ── Pipeline ──
+# ── Pipeline principal ──
 apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
