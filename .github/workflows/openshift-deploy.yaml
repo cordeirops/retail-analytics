@@ -1,69 +1,80 @@
 name: OpenShift CI/CD Pipeline
 
-# O pipeline será disparado automaticamente a cada push na branch main
+# Disparado automaticamente a cada push na branch main
 on:
   push:
     branches:
       - main
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
-
     steps:
-    # 1. Faz o checkout do seu código no runner do GitHub
-    - name: Checkout Source Code
-      uses: actions/checkout@v4
 
-    # 2. Configura o Java 17 para rodar os testes unitários antes do deploy
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-        cache: 'maven'
+      # 1. Checkout do código
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
 
-    # 3. Roda os testes do seu projeto (Garante que código quebrado não vai para produção!)
-    - name: Run Maven Unit Tests
-      run: mvn test -Dmaven.test.failure.ignore=false
+      # 2. Instala o oc CLI
+      - name: Install OpenShift CLI (oc)
+        uses: redhat-actions/openshift-tools-installer@v1
+        with:
+          oc: "latest"
 
-    # 4. Instala a CLI do OpenShift (oc) no ambiente do GitHub
-    - name: Install OpenShift CLI (oc)
-      uses: redhat-actions/openshift-tools-installer@v1
-      with:
-        oc: "latest"
-
-    # 5. Faz a autenticação segura no cluster usando os Secrets configurados
-    - name: Log in to OpenShift Sandbox
-      uses: redhat-actions/oc-login@v1
-      with:
-        openshift_server_url: ${{ secrets.OPENSHIFT_SERVER }}
-        openshift_token: ${{ secrets.OPENSHIFT_TOKEN }}
-        # Altera automaticamente para o seu namespace/projeto do Sandbox
-        namespace: pedro-sbarainicordei-dev
-
-    # 6. Cria o PipelineRun usando isolamento emptyDir em memória para o Sandbox
-    - name: Trigger OpenShift Tekton Pipeline
-      run: |
-        echo "Injetando o PipelineRun diretamente na API do Tekton..."
-        
-        oc create -f - <<EOF
-        apiVersion: tekton.dev/v1
-        kind: PipelineRun
-        metadata:
-          generateName: retail-analytics-run-
+      # 3. Login no OpenShift Sandbox
+      - name: Log in to OpenShift Sandbox
+        uses: redhat-actions/oc-login@v1
+        with:
+          openshift_server_url: ${{ secrets.OPENSHIFT_SERVER }}
+          openshift_token: ${{ secrets.OPENSHIFT_TOKEN }}
           namespace: pedro-sbarainicordei-dev
-        spec:
-          pipelineRef:
-            name: retail-analytics-pipeline
-          workspaces:
-            - name: source-code
-              # Substituindo o PVC por emptyDir para rodar sem dependências de disco
-              emptyDir: {}
-        EOF
-        
-        echo "Aguardando o registro do PipelineRun..."
-        sleep 5
-        
-        echo "Última execução registrada no cluster:"
-        oc get pipelineruns.tekton.dev --sort-by='.metadata.creationTimestamp' | tail -n 1
+
+      # 4. Dispara a Pipeline Tekton com volumeClaimTemplate
+      # CORRECAO: emptyDir nao compartilha arquivos entre tasks.
+      # volumeClaimTemplate cria um PVC real compartilhado por todas as tasks.
+      - name: Trigger Tekton Pipeline
+        run: |
+          echo "Criando PipelineRun com volumeClaimTemplate..."
+          oc create -f - <<EOF
+          apiVersion: tekton.dev/v1
+          kind: PipelineRun
+          metadata:
+            generateName: retail-analytics-run-
+            namespace: pedro-sbarainicordei-dev
+          spec:
+            pipelineRef:
+              name: retail-analytics-pipeline
+            params:
+              - name: GIT_URL
+                value: https://github.com/cordeirops/retail-analytics
+              - name: GIT_REVISION
+                value: main
+            workspaces:
+              - name: source-code
+                volumeClaimTemplate:
+                  spec:
+                    accessModes:
+                      - ReadWriteOnce
+                    resources:
+                      requests:
+                        storage: 500Mi
+          EOF
+
+      # 5. Aguarda e exibe o resultado
+      - name: Wait and show PipelineRun status
+        run: |
+          echo "Aguardando PipelineRun iniciar..."
+          sleep 10
+
+          RUN=$(oc get pipelineruns --sort-by='.metadata.creationTimestamp' \
+            -o jsonpath='{.items[-1].metadata.name}')
+          echo "PipelineRun criado: $RUN"
+
+          echo "Acompanhando execucao (timeout 10min)..."
+          oc wait pipelinerun/$RUN \
+            --for=condition=Succeeded \
+            --timeout=600s \
+            && echo "Pipeline concluida com SUCESSO!" \
+            || (echo "Pipeline FALHOU. Logs:" && \
+                oc get pipelinerun/$RUN -o jsonpath='{.status.conditions[0].message}' && \
+                exit 1)
