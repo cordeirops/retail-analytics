@@ -16,8 +16,13 @@ spec:
     - name: clone
       image: alpine/git:latest
       script: |
-        rm -rf $(workspaces.output.path)/*
-        git clone --depth=1 $(params.url) $(workspaces.output.path)
+        #!/bin/sh
+        # Garante que estamos na raiz do workspace e limpa resíduos com segurança
+        cd $(workspaces.output.path)
+        rm -rf ..?* .[!.]* *
+        
+        echo "=== Clonando o repositório na raiz do Workspace ==="
+        git clone --depth=1 $(params.url) .
 ---
 apiVersion: tekton.dev/v1
 kind: Task
@@ -34,7 +39,7 @@ spec:
   steps:
     - name: run-tests
       image: $(params.MAVEN_IMAGE)
-      # CORREÇÃO CRUCIAL AQUI: Executa na raiz exata onde o pom.xml foi clonado
+      # Executa exatamente na raiz onde o pom.xml foi descarregado pelo passo anterior
       workingDir: $(workspaces.source.path)
       command: ["mvn"]
       args: ["test", "-Dmaven.test.failure.ignore=false"]
@@ -56,6 +61,7 @@ spec:
     - name: start-build
       image: image-registry.openshift-image-registry.svc:5000/openshift/cli:latest
       script: |
+        #!/bin/sh
         oc start-build $(params.BUILD_CONFIG_NAME) --wait
 ---
 apiVersion: tekton.dev/v1
@@ -75,6 +81,7 @@ spec:
     - name: verify
       image: image-registry.openshift-image-registry.svc:5000/openshift/cli:latest
       script: |
+        #!/bin/sh
         oc rollout status deployment/$(params.DEPLOYMENT_NAME) --timeout=120s
         ROUTE=$(oc get route $(params.ROUTE_NAME) -o jsonpath='{.spec.host}')
         curl -sf http://$ROUTE/q/health/live
