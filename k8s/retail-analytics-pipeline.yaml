@@ -34,8 +34,8 @@ spec:
   steps:
     - name: run-tests
       image: $(params.MAVEN_IMAGE)
-      # AJUSTE AQUI: Aponta o diretório de execução para a subpasta correta do projeto
-      workingDir: $(workspaces.source.path)/retail-analytics
+      # CORREÇÃO AQUI: Executa na raiz exata onde o git-clone jogou os arquivos do repositório
+      workingDir: $(workspaces.source.path)
       command: ["mvn"]
       args: ["test", "-Dmaven.test.failure.ignore=false"]
       env:
