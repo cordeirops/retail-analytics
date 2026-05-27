@@ -15,9 +15,13 @@ spec:
       workingDir: $(workspaces.output.path)
       script: |
         #!/bin/sh
+        # A flag 'e' aborta no primeiro erro, a flag 'x' rastreia tudo no log
+        set -ex
+        
         echo "=== INICIANDO CLONE DO REPOSITÓRIO ==="
         rm -rf ..?* .[!.]* *
         git clone --depth=1 $(params.url) .
+        
         echo "=== ESTRUTURA BAIXADA: ==="
         ls -la
 ---
