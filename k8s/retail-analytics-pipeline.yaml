@@ -1,55 +1,4 @@
 apiVersion: tekton.dev/v1
-kind: Pipeline
-metadata:
-  name: retail-analytics-pipeline
-  namespace: pedro-sbarainicordei-dev
-spec:
-  params:
-    - name: GIT_URL
-      default: https://github.com/cordeirops/retail-analytics
-      type: string
-  workspaces:
-    - name: source-code
-  tasks:
-    # AQUI ESTÁ O SEGREDO: Usar a Task nativa do cluster que espera a escrita terminar
-    - name: git-clone
-      taskRef:
-        kind: ClusterTask
-        name: git-clone
-      params:
-        - name: url
-          value: $(params.GIT_URL)
-        - name: revision
-          value: main
-      workspaces:
-        - name: output
-          workspace: source-code
-
-    - name: unit-tests
-      taskRef:
-        kind: Task
-        name: maven-test
-      runAfter:
-        - git-clone
-      workspaces:
-        - name: source
-          workspace: source-code
-
-    - name: build-image
-      taskRef:
-        kind: Task
-        name: openshift-start-build
-      runAfter:
-        - unit-tests
-
-    - name: verify-deploy
-      taskRef:
-        kind: Task
-        name: verify-deploy
-      runAfter:
-        - build-image
----
-apiVersion: tekton.dev/v1
 kind: Task
 metadata:
   name: maven-test
@@ -109,3 +58,53 @@ spec:
         oc rollout status deployment/$(params.DEPLOYMENT_NAME) --timeout=120s
         ROUTE=$(oc get route $(params.ROUTE_NAME) -o jsonpath='{.spec.host}')
         curl -sf http://$ROUTE/q/health/live
+---
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: retail-analytics-pipeline
+  namespace: pedro-sbarainicordei-dev
+spec:
+  params:
+    - name: GIT_URL
+      default: https://github.com/cordeirops/retail-analytics
+      type: string
+  workspaces:
+    - name: source-code
+  tasks:
+    # AJUSTADO: Usando a referência limpa para carregar a task do catálogo oficial do OpenShift
+    - name: git-clone
+      taskRef:
+        name: git-clone
+      params:
+        - name: url
+          value: $(params.GIT_URL)
+        - name: revision
+          value: main
+      workspaces:
+        - name: output
+          workspace: source-code
+
+    - name: unit-tests
+      taskRef:
+        kind: Task
+        name: maven-test
+      runAfter:
+        - git-clone
+      workspaces:
+        - name: source
+          workspace: source-code
+
+    - name: build-image
+      taskRef:
+        kind: Task
+        name: openshift-start-build
+      runAfter:
+        - unit-tests
+
+    - name: verify-deploy
+      taskRef:
+        kind: Task
+        name: verify-deploy
+      runAfter:
+        - build-image
