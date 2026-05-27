@@ -2,12 +2,14 @@ apiVersion: tekton.dev/v1
 kind: Task
 metadata:
   name: git-clone
+  namespace: pedro-sbarainicordei-dev
 spec:
   params:
     - name: url
       type: string
     - name: revision
       default: main
+      type: string
   workspaces:
     - name: output
   steps:
@@ -15,15 +17,18 @@ spec:
       image: alpine/git:latest
       script: |
         rm -rf $(workspaces.output.path)/*
-        git clone --depth=1 ...
+        git clone --depth=1 $(params.url) $(workspaces.output.path)
+---
 apiVersion: tekton.dev/v1
 kind: Task
 metadata:
   name: maven-test
+  namespace: pedro-sbarainicordei-dev
 spec:
   params:
     - name: MAVEN_IMAGE
       default: registry.access.redhat.com/ubi8/openjdk-17:latest
+      type: string
   workspaces:
     - name: source
   steps:
@@ -35,44 +40,54 @@ spec:
       env:
         - name: MAVEN_OPTS
           value: "-Xmx512m -Xms256m"
+---
 apiVersion: tekton.dev/v1
 kind: Task
 metadata:
   name: openshift-start-build
+  namespace: pedro-sbarainicordei-dev
 spec:
   params:
     - name: BUILD_CONFIG_NAME
       default: retail-analytics
+      type: string
   steps:
     - name: start-build
       image: image-registry.openshift-image-registry.svc:5000/openshift/cli:latest
       script: |
         oc start-build $(params.BUILD_CONFIG_NAME) --wait
+---
 apiVersion: tekton.dev/v1
 kind: Task
 metadata:
   name: verify-deploy
+  namespace: pedro-sbarainicordei-dev
 spec:
   params:
     - name: DEPLOYMENT_NAME
       default: retail-analytics
+      type: string
     - name: ROUTE_NAME
       default: retail-analytics
+      type: string
   steps:
     - name: verify
-      image: ...openshift/cli:latest
+      image: image-registry.openshift-image-registry.svc:5000/openshift/cli:latest
       script: |
         oc rollout status deployment/$(params.DEPLOYMENT_NAME) --timeout=120s
         ROUTE=$(oc get route $(params.ROUTE_NAME) -o jsonpath='{.spec.host}')
         curl -sf http://$ROUTE/q/health/live
+---
 apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
   name: retail-analytics-pipeline
+  namespace: pedro-sbarainicordei-dev
 spec:
   params:
     - name: GIT_URL
       default: https://github.com/cordeirops/retail-analytics
+      type: string
   workspaces:
     - name: source-code
   tasks:
@@ -80,10 +95,33 @@ spec:
       taskRef:
         kind: Task
         name: git-clone
+      params:
+        - name: url
+          value: $(params.GIT_URL)
+      workspaces:
+        - name: output
+          workspace: source-code
+
     - name: unit-tests
-      taskRef: ...
-      runAfter: [git-clone]
+      taskRef:
+        kind: Task
+        name: maven-test
+      runAfter:
+        - git-clone
+      workspaces:
+        - name: source
+          workspace: source-code
+
     - name: build-image
-      runAfter: [unit-tests]
+      taskRef:
+        kind: Task
+        name: openshift-start-build
+      runAfter:
+        - unit-tests
+
     - name: verify-deploy
-      runAfter: [build-image]
+      taskRef:
+        kind: Task
+        name: verify-deploy
+      runAfter:
+        - build-image
