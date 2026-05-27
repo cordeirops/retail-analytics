@@ -1,29 +1,44 @@
 apiVersion: tekton.dev/v1
 kind: Task
 metadata:
-  name: clone-and-test
+  name: git-clone
   namespace: pedro-sbarainicordei-dev
 spec:
+  params:
+    - name: url
+      type: string
   workspaces:
-    - name: source
+    - name: output
   steps:
     - name: clone
       image: alpine/git:latest
-      workingDir: $(workspaces.source.path)
+      workingDir: $(workspaces.output.path)
       script: |
         #!/bin/sh
-        echo "=== [PASSO 1] CLONANDO REPOSITÓRIO ==="
+        echo "=== INICIANDO CLONE DO REPOSITÓRIO ==="
         rm -rf ..?* .[!.]* *
-        git clone --depth=1 https://github.com/cordeirops/retail-analytics .
-        echo "=== CONTEÚDO CLONADO COM SUCESSO ==="
+        git clone --depth=1 $(params.url) .
+        echo "=== ESTRUTURA BAIXADA: ==="
         ls -la
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: maven-test
+  namespace: pedro-sbarainicordei-dev
+spec:
+  params:
+    - name: MAVEN_IMAGE
+      default: registry.access.redhat.com/ubi8/openjdk-17:latest
+      type: string
+  workspaces:
+    - name: source
+  steps:
     - name: run-tests
-      image: registry.access.redhat.com/ubi8/openjdk-17:latest
+      image: $(params.MAVEN_IMAGE)
       workingDir: $(workspaces.source.path)
-      script: |
-        #!/bin/sh
-        echo "=== [PASSO 2] EXECUTANDO TESTES UNITÁRIOS COM MAVEN ==="
-        mvn test -Dmaven.test.failure.ignore=false
+      command: ["mvn"]
+      args: ["test", "-Dmaven.test.failure.ignore=false"]
       env:
         - name: MAVEN_OPTS
           value: "-Xmx512m -Xms256m"
@@ -43,7 +58,6 @@ spec:
       image: image-registry.openshift-image-registry.svc:5000/openshift/cli:latest
       script: |
         #!/bin/sh
-        echo "=== [PASSO 3] INICIANDO BUILD S2I NO OPENSHIFT ==="
         oc start-build $(params.BUILD_CONFIG_NAME) --wait
 ---
 apiVersion: tekton.dev/v1
@@ -64,10 +78,8 @@ spec:
       image: image-registry.openshift-image-registry.svc:5000/openshift/cli:latest
       script: |
         #!/bin/sh
-        echo "=== [PASSO 4] VERIFICANDO STATUS DO DEPLOYMENT ==="
         oc rollout status deployment/$(params.DEPLOYMENT_NAME) --timeout=120s
         ROUTE=$(oc get route $(params.ROUTE_NAME) -o jsonpath='{.spec.host}')
-        echo "=== TESTANDO ENDPOINT EM http://$ROUTE ==="
         curl -sf http://$ROUTE/q/health/live
 ---
 apiVersion: tekton.dev/v1
@@ -76,13 +88,30 @@ metadata:
   name: retail-analytics-pipeline
   namespace: pedro-sbarainicordei-dev
 spec:
+  params:
+    - name: GIT_URL
+      default: https://github.com/cordeirops/retail-analytics
+      type: string
   workspaces:
     - name: source-code
   tasks:
-    - name: clone-and-test
+    - name: git-clone
       taskRef:
         kind: Task
-        name: clone-and-test
+        name: git-clone
+      params:
+        - name: url
+          value: $(params.GIT_URL)
+      workspaces:
+        - name: output
+          workspace: source-code
+
+    - name: unit-tests
+      taskRef:
+        kind: Task
+        name: maven-test
+      runAfter:
+        - git-clone
       workspaces:
         - name: source
           workspace: source-code
@@ -92,7 +121,7 @@ spec:
         kind: Task
         name: openshift-start-build
       runAfter:
-        - clone-and-test
+        - unit-tests
 
     - name: verify-deploy
       taskRef:
